@@ -1,0 +1,117 @@
+# Watchlist of companies to scan daily. Each entry needs `source` + provider-specific ids.
+# Verified live during build (see DESIGN.md). Grow this via discovery passes.
+#
+# Fields by source:
+#   greenhouse:      name, slug
+#   lever:           name, slug
+#   comeet:          name, uid, token
+#   smartrecruiters: name, slug            (slug often ends in a digit, e.g. "Wix2")
+#   workday:         name, tenant, site, wd_host
+# Optional: is_israeli (default true) — controls the "include if location ambiguous" rule.
+
+- name: Similarweb
+  source: greenhouse
+  slug: similarweb
+  is_israeli: true
+
+- name: Optimove
+  source: greenhouse
+  slug: optimove
+  is_israeli: true
+
+- name: VAST Data
+  source: comeet
+  uid: "43.001"
+  token: "34110453411D4968234168209C31D49"
+  is_israeli: true
+
+- name: Check Point
+  source: smartrecruiters
+  slug: CheckPointSoftwareTechnologies2
+  is_israeli: true
+
+- name: Wix
+  source: smartrecruiters
+  slug: Wix2
+  is_israeli: true
+
+# --- discovery pass (verified live 2026-07-28) ---
+
+# greenhouse
+- {name: Riskified, source: greenhouse, slug: riskified, is_israeli: true}
+- {name: Fireblocks, source: greenhouse, slug: fireblocks, is_israeli: true}
+- {name: Melio, source: greenhouse, slug: melio, is_israeli: true}
+- {name: Forter, source: greenhouse, slug: forter, is_israeli: true}
+- {name: Bringg, source: greenhouse, slug: bringg, is_israeli: true}
+- {name: Yotpo, source: greenhouse, slug: yotpo, is_israeli: true}
+- {name: Axonius, source: greenhouse, slug: axonius, is_israeli: true}
+- {name: Cybereason, source: greenhouse, slug: cybereason, is_israeli: true}
+- {name: Taboola, source: greenhouse, slug: taboola, is_israeli: true}
+- {name: AppsFlyer, source: greenhouse, slug: appsflyer, is_israeli: true}
+- {name: Via, source: greenhouse, slug: via, is_israeli: true}
+- {name: Lightricks, source: greenhouse, slug: lightricks, is_israeli: true}
+- {name: Sisense, source: greenhouse, slug: sisense, is_israeli: true}
+- {name: Payoneer, source: greenhouse, slug: payoneer, is_israeli: true}
+- {name: BigID, source: greenhouse, slug: bigid, is_israeli: true}
+- {name: Transmit Security, source: greenhouse, slug: transmitsecurity, is_israeli: true}
+- {name: Torq, source: greenhouse, slug: torq, is_israeli: true}
+- {name: Descope, source: greenhouse, slug: descope, is_israeli: true}
+- {name: Sweet Security, source: greenhouse, slug: sweetsecurity, is_israeli: true}
+- {name: Guardz, source: greenhouse, slug: guardz, is_israeli: true}
+- {name: Datarails, source: greenhouse, slug: datarails, is_israeli: true}
+
+# lever
+- {name: WalkMe, source: lever, slug: walkme, is_israeli: true}
+- {name: Aleph, source: lever, slug: aleph, is_israeli: true}
+
+# greenhouse (batch 2 — verified 2026-07-28)
+- {name: JFrog, source: greenhouse, slug: jfrog, is_israeli: true}
+- {name: Gong, source: greenhouse, slug: gongio, is_israeli: true}
+- {name: Armis, source: greenhouse, slug: armissecurity, is_israeli: true}
+- {name: Cato Networks, source: greenhouse, slug: catonetworks, is_israeli: true}
+- {name: Workato, source: greenhouse, slug: workato, is_israeli: true}
+- {name: Lightrun, source: greenhouse, slug: lightrun, is_israeli: true}
+- {name: Salt Security, source: greenhouse, slug: saltsecurity, is_israeli: true}
+- {name: OpenWeb, source: greenhouse, slug: openweb, is_israeli: true}
+- {name: Pagaya, source: greenhouse, slug: pagaya, is_israeli: true}
+- {name: Kayzen, source: greenhouse, slug: kayzen, is_israeli: true}
+- {name: Augury, source: greenhouse, slug: augury, is_israeli: true}
+- {name: Wing Security, source: greenhouse, slug: wing, is_israeli: true}
+- {name: Capitolis, source: greenhouse, slug: capitolis, is_israeli: true}
+- {name: Mixtiles, source: greenhouse, slug: mixtiles, is_israeli: true}
+- {name: Cortica, source: greenhouse, slug: cortica, is_israeli: true}
+- {name: SafeBreach, source: greenhouse, slug: safebreach, is_israeli: true}
+
+# comeet (token scraped from public /jobs/{slug}/{uid} page)
+- {name: Fiverr, source: comeet, uid: '60.002', token: '62188018812631018862C4188', is_israeli: true}
+- {name: Comm-IT, source: comeet, uid: '76.008', token: '67826D067833C0CF002D48020581368', is_israeli: true}
+- {name: Max Security, source: comeet, uid: '2B.004', token: 'B244DFC4DFC42D8216C216C64444DFC64445920', is_israeli: true}
+- {name: Attil, source: comeet, uid: '38.00A', token: '83A315C29223996399641D039963996107418AE', is_israeli: true}
+- {name: Deloitte IL, source: comeet, uid: 'F7.00B', token: '7FB2FE21FEC3FD847D33FD8FF603FD81FEC', is_israeli: true}
+- {name: Israel Tech Guard, source: comeet, uid: '29.009', token: '92936F65271401F125212521B7B929527136F6', is_israeli: true}
+- {name: Jewish Agency, source: comeet, uid: 'C8.008', token: '8C834B03D784F0846401A588C84F0811902320', is_israeli: true}
+
+# smartrecruiters (multinationals w/ Israel offices — is_israeli:false so only IL-located jobs pass)
+- {name: ServiceNow, source: smartrecruiters, slug: ServiceNow, is_israeli: false}
+- {name: Smiths Group, source: smartrecruiters, slug: SmithsGroup2, is_israeli: false}
+
+# workday (multinationals w/ Israel R&D — searchText=Israel filters to IL jobs; is_israeli:false)
+- {name: Nvidia, source: workday, tenant: nvidia, site: NVIDIAExternalCareerSite, wd_host: wd5, is_israeli: false}
+- {name: Intel, source: workday, tenant: intel, site: External, wd_host: wd1, is_israeli: false}
+- {name: PayPal, source: workday, tenant: paypal, site: jobs, wd_host: wd1, is_israeli: false}
+- {name: Salesforce, source: workday, tenant: salesforce, site: External_Career_Site, wd_host: wd12, is_israeli: false}
+
+# ashby (public job-board API; addressCountry gives clean Israel filtering)
+- {name: Nexxen, source: ashby, slug: nexxen, is_israeli: true}
+- {name: Tavily, source: ashby, slug: tavily, is_israeli: true}
+- {name: Viz.ai, source: ashby, slug: Viz.ai, is_israeli: true}
+- {name: Oligo Security, source: ashby, slug: oligo, is_israeli: true}
+- {name: Sentra, source: ashby, slug: sentra, is_israeli: true}
+- {name: Sweep, source: ashby, slug: sweep, is_israeli: true}
+- {name: Lemonade, source: ashby, slug: lemonade, is_israeli: true}
+- {name: Orca Security, source: ashby, slug: orca, is_israeli: true}
+# multinationals w/ IL office — is_israeli:false (only IL-located jobs pass)
+- {name: HUMAN, source: ashby, slug: human, is_israeli: false}
+- {name: Chainalysis, source: ashby, slug: chainalysis-careers, is_israeli: false}
+- {name: Airwallex, source: ashby, slug: airwallex, is_israeli: false}
+- {name: Zip, source: ashby, slug: zip, is_israeli: false}

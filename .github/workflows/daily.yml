@@ -1,0 +1,47 @@
+name: Daily job scan
+
+on:
+  schedule:
+    # 18:30 UTC ≈ 21:30 Israel time in summer (UTC+3); ~20:30 in winter (UTC+2).
+    - cron: "30 18 * * *"
+  workflow_dispatch: {}   # allow manual runs from the Actions tab
+
+# Needs write access to commit the updated ledger (seen.sqlite + jobs.csv) back.
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (carries yesterday's ledger)
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Run daily scan + send email
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT: ${{ secrets.RECIPIENT }}
+        run: uv run python -m scanner.run
+
+      - name: Commit updated ledger
+        run: |
+          git config user.name  "job-scanner-bot"
+          git config user.email "job-scanner-bot@users.noreply.github.com"
+          git add seen.sqlite jobs.csv
+          if git diff --cached --quiet; then
+            echo "No ledger changes to commit."
+          else
+            git commit -m "chore: daily scan ledger $(date -u +%Y-%m-%d)"
+            git push
+          fi
