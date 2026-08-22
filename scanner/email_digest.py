@@ -15,6 +15,7 @@ postings render correctly inside the left-to-right layout.
 import os
 import smtplib
 from collections import defaultdict
+from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
@@ -27,6 +28,9 @@ SMTP_PORT = 465
 # only count the rest. These two ceilings keep any digest under the limit.
 MAX_CARDS = 50
 MAX_LISTED = 120
+
+# Leads the subject line and the masthead. Set to "" to fall back to plain wording.
+DEDICATION = "Job scanner for the most beautiful girl in the world"
 
 # One place to retheme the whole email.
 VIOLET = "#7C3AED"
@@ -150,24 +154,23 @@ def _shell(inner, preheader_text):
 
 def _header(date_str, count):
     """Gradient masthead. bgcolor carries clients that ignore the gradient."""
-    if count:
-        headline = f"{count} new role{'s' if count != 1 else ''}"
-        sub = "Matching your profile, in Israel"
-    else:
-        headline = "No new roles today"
-        sub = "The scan ran and found nothing new"
+    headline = (
+        f"{count} new role{'s' if count != 1 else ''}"
+        if count
+        else "No new roles today"
+    )
+    title = DEDICATION or "Job Scanner"
 
     return (
         f"<tr><td bgcolor='{VIOLET}' style='background-image:{GRADIENT};"
         "border-radius:16px 16px 0 0;padding:30px 26px 26px'>"
-        f"<div style='font-family:{FONT};font-size:12px;font-weight:600;"
-        "letter-spacing:1.4px;text-transform:uppercase;color:#F3E8FF;"
-        f"margin:0 0 10px'>Job Scanner &middot; {escape(date_str)}</div>"
+        # Not uppercased: the dedication is a sentence, and shouting it reads wrong.
+        f"<div style='font-family:{FONT};font-size:13px;font-weight:600;"
+        f"letter-spacing:0.3px;color:#F3E8FF;margin:0 0 10px'>{escape(title)}</div>"
         f"<div style='font-family:{FONT};font-size:30px;font-weight:700;"
         f"color:#FFFFFF;line-height:1.15;margin:0'>{escape(headline)}</div>"
         f"<div style='font-family:{FONT};font-size:14px;color:#F3E8FF;"
-        f"margin:8px 0 0'>{escape(sub)}</div>"
-        "</td></tr>"
+        f"margin:8px 0 0'>{escape(date_str)}</div></td></tr>"
     )
 
 
@@ -247,7 +250,9 @@ def send_email(html_body, subject, *, text_body=None, dry_run=False):
         )
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
+    # The subject holds non-ASCII characters, so it needs RFC 2047 encoding or it
+    # arrives as mojibake.
+    msg["Subject"] = Header(subject, "utf-8").encode()
     msg["From"] = sender
     msg["To"] = recipient
     # Order matters: clients show the LAST part they can render.
@@ -287,7 +292,13 @@ def render_text(jobs, date_str):
 
 
 def subject_for(jobs, date_str):
-    if not jobs:
-        return f"No new jobs today — {date_str}"
+    """Dedication first, then a part that changes daily.
+
+    The changing tail is not decoration: Gmail threads messages that share a subject, so
+    a fixed subject would collapse every digest into one conversation.
+    """
     n = len(jobs)
-    return f"{n} new job{'s' if n != 1 else ''} — {date_str}"
+    what = f"{n} new role{'s' if n != 1 else ''}" if n else "No new roles"
+    if DEDICATION:
+        return f"{DEDICATION} · {what} · {date_str}"
+    return f"{what} — {date_str}"
