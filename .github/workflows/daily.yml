@@ -62,13 +62,20 @@ jobs:
       - name: Commit updated ledger
         if: always() && inputs.dry_run != true
         run: |
-          if [ ! -f seen.sqlite ] && [ ! -f jobs.csv ]; then
+          # Stage only what exists. jobs.csv is not tracked and is written late in the
+          # run, so an early failure leaves it absent — and `git add` on a missing path
+          # is a hard error, which would fail the very step that always() exists to run.
+          staged=""
+          for f in seen.sqlite jobs.csv; do
+            [ -f "$f" ] && staged="$staged $f"
+          done
+          if [ -z "$staged" ]; then
             echo "Nothing to commit — the scan did not get far enough."
             exit 0
           fi
           git config user.name  "job-scanner-bot"
           git config user.email "job-scanner-bot@users.noreply.github.com"
-          git add seen.sqlite jobs.csv
+          git add -- $staged
           if git diff --cached --quiet; then
             echo "No ledger changes to commit."
             exit 0
