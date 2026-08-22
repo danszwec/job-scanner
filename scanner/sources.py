@@ -38,9 +38,7 @@ def _iso_from_ms(ms):
     if not ms:
         return None
     try:
-        return datetime.datetime.fromtimestamp(
-            ms / 1000, datetime.UTC
-        ).isoformat()
+        return datetime.datetime.fromtimestamp(ms / 1000, datetime.UTC).isoformat()
     except (TypeError, ValueError, OSError):
         return None
 

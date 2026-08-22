@@ -1,68 +1,234 @@
-"""Title keyword matching (English + Hebrew) and the Israel location rule.
+"""Title role matching (English + Hebrew) and the Israel location rule.
 
 A job passes the filter when:
-  1. its title contains at least one INCLUDE keyword, AND
-  2. its title contains none of the EXCLUDE keywords, AND
-  3. it is located in Israel (see is_israel).
+  1. its title names a role in the target families (see title_matches), AND
+  2. its title contains none of the EXCLUDE (seniority / other-field) terms, AND
+  3. it is located in Israel (see is_israel), AND
+  4. it was posted within MAX_AGE_DAYS (see is_fresh).
 
-All title matching is case-insensitive and word-aware for English (so "product" does not
-match inside "productivity" unintentionally we still allow it — see note). Hebrew has no
-casing; we match on substrings of the Hebrew roots.
+Matching a role, not a keyword
+------------------------------
+An earlier version listed bare words — "manager", "product", "ops" — and accepted any
+title containing one. That let through every engineering, tax and payroll title that
+happens to use the word ("Software Engineering Manager", "Tax Manager", "Ops Data
+Engineer"). We instead require a ROLE: a DOMAIN word (product / project / operations /
+brand / marketing ...) next to a HEAD noun (manager / coordinator / designer ...), in
+either order. "Engineering Manager" has a head but no domain, so it drops out; "Software
+Project Manager" has both, so it stays.
+
+Because engineer / developer / architect / scientist are deliberately NOT head nouns, most
+technical titles fail on structure alone and need no blocklist.
+
+A few terms are strong enough on their own (coordinator, copywriter, art director) and are
+matched without needing a domain word. Hebrew works the same way, with its own head and
+domain lists; Hebrew has no casing, so it is matched as substrings to absorb the
+מנהל/מנהלת gender suffixes.
 """
 
 import datetime
 import re
 
-# --- Keyword map (see DESIGN.md). English matched as whole words; Hebrew as substrings. ---
+# --- Roles we want (see DESIGN.md) --------------------------------------------------
 
-INCLUDE_EN = [
-    "project",
+# The subject area of the job.
+DOMAINS_EN = [
     "product",
-    "manager",
-    "coordinat",  # coordinator / coordination
-    "creative",
-    "operations",
+    "project",
+    r"program(me)?",
+    "portfolio",
+    r"operations?",
     "ops",
-    "brand",
+    r"brand(ing)?",
+    "marketing",
+    "creative",
+    "content",
+    "community",
+    "social media",
+    "campaign",
+    r"events?",
+    "studio",
+    "production",
+    r"partner(ship)?s?",
+    "business development",
+    "account",
+    "customer success",
+    "customer experience",
+    "growth",
+    # Only the marketing sense of "acquisition" — bare "acquisition" pulled in every
+    # "Talent Acquisition" recruiting role.
+    r"(?:user|customer|player) acquisition",
+    "demand generation",
+    "facilities",
+    "office",
+    "procurement",
+    "logistics",
+    "supply chain",
+    "delivery",
 ]
 
-INCLUDE_HE = [
+# The kind of role. Note what is absent: engineer, developer, architect, scientist, sre,
+# qa. Leaving them out is what keeps technical titles from matching.
+HEADS_EN = [
+    "manager",
+    "mgr",
+    r"coordinators?",
+    "owner",
+    "director",
+    "specialist",
+    "planner",
+    "producer",
+    "strategist",
+    "designer",
+    "associate",
+    "analyst",
+    "generalist",
+    "administrator",
+    "officer",
+    "consultant",
+    "lead",
+    "head",
+]
+# Deliberately not heads: "executive" (Account Executive is quota sales) and "partner"
+# (People Partner / Talent Acquisition Partner are HR). Both still work as domain words,
+# so "Partner Development Manager" is unaffected.
+
+# Strong enough to match with no domain word beside them.
+STANDALONE_EN = [
+    r"coordinat(or|ion)",
+    "copywriter",
+    "creative",
+    "art director",
+    "branding",
+    r"product management",
+    r"project management",
+    "scrum master",
+]
+
+DOMAINS_HE = [
     "מוצר",  # product
     "פרויקט",  # project
-    "מנהל",  # manager (מנהל/מנהלת)
-    "ניהול",  # management
-    "רכז",  # coordinator (רכז/רכזת)
-    "תיאום",  # coordination
-    "קריאייטיב",  # creative
-    "יצירתי",  # creative
+    "פרוייקט",  # project (alt spelling)
+    "מיזם",  # venture / initiative
     "תפעול",  # operations
     "מותג",  # brand
     "מיתוג",  # branding
+    "שיווק",  # marketing
+    "תוכן",  # content
+    "קריאייטיב",  # creative
+    "יצירתי",  # creative
+    "קמפיין",  # campaign
+    "אירוע",  # event
+    "קהילה",  # community
+    "לקוחות",  # clients
+    "רכש",  # procurement
+    "לוגיסטיק",  # logistics
+    "משאבי אנוש",  # HR
 ]
 
-EXCLUDE_EN = ["senior", "lead"]
+HEADS_HE = [
+    "מנהל",  # manager (מנהל/מנהלת)
+    "רכז",  # coordinator (רכז/רכזת)
+    "מתאם",  # coordinator
+    "מתאמת",
+    "מפיק",  # producer
+    "מפיקה",
+    "אחראי",  # in charge of
+    "אחראית",
+    "ניהול",  # management
+]
+
+# Hebrew terms strong enough on their own.
+STANDALONE_HE = [
+    "רכז",  # coordinator — a role name by itself
+    "רכזת",
+    "תיאום",  # coordination
+    "קופירייט",  # copywriting
+    "מיתוג",  # branding
+]
+
+# --- Roles we do NOT want -----------------------------------------------------------
+
+# Seniority. The old list held only "senior" and "lead", so "Sr Staff Inbound Product
+# Manager" and "Principal Product Manager" both slipped through. "director" is
+# deliberately NOT here: art director and creative director are target roles.
+EXCLUDE_EN = [
+    "senior",
+    "sr",
+    "snr",
+    "staff",
+    "principal",
+    "lead",
+    "leader",
+    "head of",
+    "vp",
+    "svp",
+    "evp",
+    "chief",
+]
+
+# Other professions that can still borrow a domain word ("Client and Collections
+# Coordinator", "Product Counsel"). Structure catches most of these already; this is a
+# backstop.
+EXCLUDE_FIELD_EN = [
+    "tax",
+    "audit",
+    "auditor",
+    "payroll",
+    "bookkeep(er|ing)",
+    "accountant",
+    "actuar(y|ial)",
+    "controller",
+    "collections",
+    "counsel",
+    "attorney",
+    "paralegal",
+    "physician",
+    r"nurse",
+    "veterinar(y|ian)",
+    "pharmacist",
+]
 
 EXCLUDE_HE = [
     "בכיר",  # senior (בכיר/בכירה)
     "מוביל",  # lead (מוביל/מובילה)
     "ראש צוות",  # team lead
+    "סמנכ",  # deputy VP
+    "מנכ",  # CEO
+    "סוציאלי",  # social worker — different profession
+    "שליח",  # emissary — different profession
+    'רו"ח',  # CPA
+    "מבקר",  # auditor
 ]
 
-# English include words matched on a word boundary at the start (prefix) so "coordinat"
-# catches coordinator/coordination and "operations"/"ops" both hit. Exclude words matched
-# as whole words to avoid over-excluding.
-_INCLUDE_EN_RE = re.compile(
-    r"\b(" + "|".join(re.escape(w) for w in INCLUDE_EN) + r")", re.IGNORECASE
+
+def _group(words):
+    return "(?:" + "|".join(words) + ")"
+
+
+# Up to a few filler words may sit between the domain and the head, so "Product Marketing
+# Manager" and "Director of Product Design" both match.
+_FILLER = r"[\w&/,'’\-\.\(\)]*(?:\s+[\w&/,'’\-\.\(\)]+){0,3}?\s+"
+
+_ROLE_EN_RE = re.compile(
+    r"\b" + _group(DOMAINS_EN) + r"\b" + _FILLER + r"\b" + _group(HEADS_EN) + r"\b"
+    r"|"
+    r"\b" + _group(HEADS_EN) + r"\b" + _FILLER + r"\b" + _group(DOMAINS_EN) + r"\b",
+    re.IGNORECASE,
 )
+_STANDALONE_EN_RE = re.compile(r"\b" + _group(STANDALONE_EN) + r"\b", re.IGNORECASE)
 _EXCLUDE_EN_RE = re.compile(
-    r"\b(" + "|".join(re.escape(w) for w in EXCLUDE_EN) + r")\b", re.IGNORECASE
+    r"\b" + _group(EXCLUDE_EN + EXCLUDE_FIELD_EN) + r"\b", re.IGNORECASE
 )
 
 
 def _has_include(title):
-    if _INCLUDE_EN_RE.search(title):
+    if _STANDALONE_EN_RE.search(title) or _ROLE_EN_RE.search(title):
         return True
-    return any(root in title for root in INCLUDE_HE)
+    if any(w in title for w in STANDALONE_HE):
+        return True
+    has_domain = any(w in title for w in DOMAINS_HE)
+    has_head = any(w in title for w in HEADS_HE)
+    return has_domain and has_head
 
 
 def _has_exclude(title):
@@ -72,7 +238,7 @@ def _has_exclude(title):
 
 
 def title_matches(title):
-    """True iff title has an include keyword and no exclude keyword."""
+    """True iff the title names a target role and carries no excluded term."""
     if not title:
         return False
     return _has_include(title) and not _has_exclude(title)
@@ -112,9 +278,6 @@ ISRAEL_TERMS = [
     "or yehuda",
     "airport city",
 ]
-
-# Clear non-Israel signals: if country code says elsewhere, exclude outright.
-_NON_IL_COUNTRY = None  # any country present and != IL/il handled in is_israel
 
 
 def is_israel(job, company_is_israeli=True):
