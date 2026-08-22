@@ -181,10 +181,51 @@ def fetch_smartrecruiters(company):
     return jobs
 
 
+def find_israel_facet(facets):
+    """Locate the facet that filters a Workday tenant down to Israel.
+
+    Returns (facet_parameter, value_id), or None if the tenant does not expose one.
+
+    Tenants disagree on where location lives. Salesforce puts a country facet at the top
+    level; Nvidia and Intel nest theirs a group deep under 'locationMainGroup', and the
+    parameter to send back is the one on the *inner* group, not the outer one. So we walk
+    the tree instead of hardcoding ids — which also means a tenant reorganising its
+    facets degrades to the old search instead of silently returning nothing.
+    """
+
+    def walk(param, values):
+        for value in values or []:
+            nested = value.get("values")
+            if nested:
+                found = walk(value.get("facetParameter") or param, nested)
+                if found:
+                    return found
+            elif "israel" in str(value.get("descriptor", "")).lower():
+                return param, value.get("id")
+        return None
+
+    for facet in facets or []:
+        found = walk(facet.get("facetParameter"), facet.get("values"))
+        if found:
+            return found
+    return None
+
+
+# A tenant with a huge Israel presence still has to terminate. 20 per page, so this caps
+# a single company at 3000 postings.
+WORKDAY_MAX_PAGES = 150
+
+
 def fetch_workday(company):
     """company: {name, tenant, site, wd_host}. POST workday cxs jobs, paginated.
 
-    Uses searchText='Israel' to pre-filter server-side (Workday tenants are huge).
+    Filters by the tenant's Israel location facet. The previous approach passed
+    searchText='Israel', which is a free-text search over the whole posting rather than a
+    location filter: it found 40 of Nvidia's 435 Israeli roles, none of Salesforce's 12,
+    and on PayPal 'IL' matched Illinois. Facets are the actual location filter.
+
+    Falls back to searchText when a tenant exposes no Israel facet, so a tenant with no
+    Israeli presence still behaves as before.
     """
     tenant = company["tenant"]
     site = company["site"]
@@ -192,20 +233,44 @@ def fetch_workday(company):
     base = f"https://{tenant}.{wd_host}.myworkdayjobs.com"
     url = f"{base}/wday/cxs/{tenant}/{site}/jobs"
     headers = {**UA, "Content-Type": "application/json", "Accept": "application/json"}
+
+    # One probe to read the facet tree, then paginate with the filter applied.
+    probe = requests.post(
+        url,
+        headers=headers,
+        json={"limit": 1, "offset": 0, "searchText": "", "appliedFacets": {}},
+        timeout=TIMEOUT,
+    )
+    probe.raise_for_status()
+    facet = find_israel_facet(probe.json().get("facets"))
+
+    if facet:
+        applied_facets = {facet[0]: [facet[1]]}
+        search_text = ""
+    else:
+        applied_facets = {}
+        search_text = company.get("search_text", "Israel")
+
     jobs = []
     offset = 0
     limit = 20
-    while True:
+    total = None
+    for _ in range(WORKDAY_MAX_PAGES):
         payload = {
             "limit": limit,
             "offset": offset,
-            "searchText": company.get("search_text", "Israel"),
-            "appliedFacets": {},
+            "searchText": search_text,
+            "appliedFacets": applied_facets,
         }
         r = requests.post(url, headers=headers, json=payload, timeout=TIMEOUT)
         r.raise_for_status()
         data = r.json()
         postings = data.get("jobPostings", [])
+        # Workday reports `total` on the first page only; later pages say 0. Trusting it
+        # every page made `offset >= total` true immediately, which silently capped every
+        # Workday company at 40 postings.
+        if total is None:
+            total = data.get("total") or 0
         for j in postings:
             path = j.get("externalPath", "")
             loc = j.get("locationsText", "")
@@ -224,7 +289,7 @@ def fetch_workday(company):
                 }
             )
         offset += limit
-        if offset >= data.get("total", 0) or not postings:
+        if not postings or (total and offset >= total):
             break
     return jobs
 
