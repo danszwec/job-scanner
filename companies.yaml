@@ -115,3 +115,42 @@
 - {name: Chainalysis, source: ashby, slug: chainalysis-careers, is_israeli: false}
 - {name: Airwallex, source: ashby, slug: airwallex, is_israeli: false}
 - {name: Zip, source: ashby, slug: zip, is_israeli: false}
+
+# --- from Shani's Israel_Creative_Companies_careers.xlsx (verified live 2026-08-21) ---
+# 113 distinct companies in the sheet; 16 were already above; 24 had a reachable ATS API
+# and are added here. The remaining 73 expose no public ATS JSON endpoint (JS-only careers
+# pages, site forms, or an unsupported provider), so they cannot be scanned as-is.
+
+# greenhouse
+- {name: Connecteam, source: greenhouse, slug: connecteam, is_israeli: true}
+- {name: Nanit, source: greenhouse, slug: nanit, is_israeli: true}
+- {name: ScaleOps, source: greenhouse, slug: scaleops, is_israeli: true}
+- {name: Wiz, source: greenhouse, slug: wizinc, is_israeli: true}
+
+# lever
+- {name: Houzz, source: lever, slug: houzz, is_israeli: false}
+
+# ashby
+- {name: Moon Active, source: ashby, slug: moonactive, is_israeli: true}
+- {name: Simply, source: ashby, slug: simply, is_israeli: true}
+- {name: Redis, source: ashby, slug: redis, is_israeli: true}
+
+# smartrecruiters
+- {name: Kaltura, source: smartrecruiters, slug: kalturainc, is_israeli: true}
+
+# comeet (uid + token scraped from the public careers page)
+- {name: Bizzabo, source: comeet, uid: 'A5.000', token: '5A01C2032A05A0B40010E0168027605A0', is_israeli: true}
+- {name: Empathy, source: comeet, uid: 'F8.007', token: '8F735CA47B835CA3EC111EE1AE535CA11EE8F7', is_israeli: true}
+- {name: Firebolt, source: comeet, uid: '26.004', token: '62424D80374424D824D8126C126C1EB41890', is_israeli: true}
+- {name: Guardio, source: comeet, uid: '57.000', token: '7502BE015F0249041D01D40EA03A801D40EA0', is_israeli: true}
+- {name: Riverside, source: comeet, uid: '66.009', token: '66926766692CDF00669CD22CDF133B', is_israeli: true}
+- {name: Anyword, source: comeet, uid: '30.00B', token: '3BB12131D8EC1271D801271D8', is_israeli: true}
+- {name: Aqua Security, source: comeet, uid: '91.001', token: '191644966966644E194B3191644644', is_israeli: true}
+- {name: Justt, source: comeet, uid: '36.001', token: '6312526631018C41EF518C431883188C62', is_israeli: true}
+- {name: Mine, source: comeet, uid: '39.003', token: '933373252CB4998499824CC2DFF01B990', is_israeli: true}
+- {name: Minute Media, source: comeet, uid: '45.00A', token: '54A1A7225062A50FDE2F9A1FBC01FBC1528', is_israeli: true}
+- {name: Natural Intelligence, source: comeet, uid: '71.001', token: '1715C47357355C45C4A17CF9CF9735', is_israeli: true}
+- {name: Tailor Brands, source: comeet, uid: '94.009', token: '49916FD16FD24C89320DCB296116FD2961', is_israeli: true}
+- {name: Travelier, source: comeet, uid: '64.006', token: '46615FE15FED321A6446601A64D322796', is_israeli: true}
+- {name: UVeye, source: comeet, uid: '92.00F', token: '29FA7C17971797FBA179753E53E0A7C', is_israeli: true}
+- {name: eToro, source: comeet, uid: '41.009', token: '14952452466D3DB7B61495240B91', is_israeli: true}
