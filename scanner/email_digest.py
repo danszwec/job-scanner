@@ -18,6 +18,7 @@ from collections import defaultdict
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formataddr
 from html import escape
 
 SMTP_HOST = "smtp.gmail.com"
@@ -31,6 +32,9 @@ MAX_LISTED = 120
 
 # Leads the subject line and the masthead. Set to "" to fall back to plain wording.
 DEDICATION = "Job scanner for the most beautiful girl in the world"
+
+# Shown as the sender instead of the bare address. Gmail displays this, not GMAIL_USER.
+FROM_NAME = "Job Scanner"
 
 # One place to retheme the whole email.
 VIOLET = "#7C3AED"
@@ -253,7 +257,8 @@ def send_email(html_body, subject, *, text_body=None, dry_run=False):
     # The subject holds non-ASCII characters, so it needs RFC 2047 encoding or it
     # arrives as mojibake.
     msg["Subject"] = Header(subject, "utf-8").encode()
-    msg["From"] = sender
+    # A display name, so the inbox shows "Job Scanner" and not the raw gmail address.
+    msg["From"] = formataddr((FROM_NAME, sender), charset="utf-8")
     msg["To"] = recipient
     # Order matters: clients show the LAST part they can render.
     msg.attach(
