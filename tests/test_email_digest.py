@@ -131,3 +131,22 @@ def test_plain_text_alternative_lists_every_role():
     for job in JOBS:
         assert job["title"] in text
         assert job["url"] in text
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("a@x.com", ["a@x.com"]),
+        ("a@x.com,b@y.com", ["a@x.com", "b@y.com"]),
+        ("a@x.com, b@y.com , c@z.com", ["a@x.com", "b@y.com", "c@z.com"]),
+        ("a@x.com;b@y.com", ["a@x.com", "b@y.com"]),
+        ("  a@x.com  ", ["a@x.com"]),
+        ("a@x.com,,", ["a@x.com"]),
+        ("", []),
+        (None, []),
+    ],
+)
+def test_recipient_secret_can_hold_several_addresses(raw, expected):
+    """sendmail needs a real list; the raw comma-joined string would be treated as one
+    malformed address and rejected."""
+    assert email_digest.parse_recipients(raw) == expected

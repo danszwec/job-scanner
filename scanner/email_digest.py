@@ -13,6 +13,7 @@ postings render correctly inside the left-to-right layout.
 """
 
 import os
+import re
 import smtplib
 from collections import defaultdict
 from email.header import Header
@@ -257,6 +258,17 @@ def render_html(jobs, date_str):
     return _shell(_header(date_str, len(jobs)) + body + _footer(), preheader)
 
 
+def parse_recipients(raw):
+    """Split the RECIPIENT secret into addresses.
+
+    Accepts one address or several separated by commas or semicolons, so the digest can
+    go to Shani and to Dan without editing code. sendmail needs a real list — handing it
+    the raw comma-joined string makes it treat the whole thing as one malformed address.
+    """
+    parts = re.split(r"[,;]", raw or "")
+    return [p.strip() for p in parts if p.strip()]
+
+
 def send_email(html_body, subject, *, text_body=None, dry_run=False):
     """Send via Gmail SMTP as multipart/alternative. In dry_run, print instead."""
     sender = os.environ.get("GMAIL_USER")
@@ -273,13 +285,17 @@ def send_email(html_body, subject, *, text_body=None, dry_run=False):
             "Missing GMAIL_USER / GMAIL_APP_PASSWORD / RECIPIENT env vars"
         )
 
+    recipients = parse_recipients(recipient)
+    if not recipients:
+        raise RuntimeError(f"RECIPIENT held no usable address: {recipient!r}")
+
     msg = MIMEMultipart("alternative")
     # The subject holds non-ASCII characters, so it needs RFC 2047 encoding or it
     # arrives as mojibake.
     msg["Subject"] = Header(subject, "utf-8").encode()
     # A display name, so the inbox shows "Job Scanner" and not the raw gmail address.
     msg["From"] = formataddr((FROM_NAME, sender), charset="utf-8")
-    msg["To"] = recipient
+    msg["To"] = ", ".join(recipients)
     # Order matters: clients show the LAST part they can render.
     msg.attach(
         MIMEText(
@@ -292,7 +308,7 @@ def send_email(html_body, subject, *, text_body=None, dry_run=False):
 
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
         server.login(sender, password)
-        server.sendmail(sender, [recipient], msg.as_string())
+        server.sendmail(sender, recipients, msg.as_string())
 
 
 def render_text(jobs, date_str):
