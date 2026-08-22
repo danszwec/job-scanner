@@ -1,108 +1,121 @@
 # Handoff — Job Scanner
 
-Everything needed to run and finish this project. All code is in git at
-**https://github.com/danszwec/job-scanner** (personal account `danszwec`).
+Daily scanner that finds new Israeli job postings matching a profile and emails a digest.
+Runs free on GitHub Actions. Code: **https://github.com/danszwec/job-scanner**.
 
-## What this is
+Design in [DESIGN.md](DESIGN.md), usage in [README.md](README.md).
 
-A daily scanner that finds new Israeli job postings matching a profile and emails a
-digest to shani.shahar1997@gmail.com. Runs free on GitHub Actions at 21:30 IST. Never
-emails the same job twice (SQLite dedup ledger committed back to the repo each run).
-Full design in [DESIGN.md](DESIGN.md); usage in [README.md](README.md).
+## Status: live
 
-- 69 companies in `companies.yaml` across 6 ATS providers (Greenhouse, Lever, Comeet,
-  SmartRecruiters, Workday, Ashby).
-- Filter: title contains product/project/manager/coordination/creative/operations/brand
-  (EN+HE), excludes senior/lead, Israel-only, posted within 45 days.
+Working end to end as of **2026-08-22**. Run #26 was the first green run after 25
+consecutive failures.
 
-## Current status (as of handoff)
+- **97 companies** across 7 ATS providers: 44 Greenhouse, 24 Comeet, 15 Ashby,
+  5 SmartRecruiters, 5 Workday, 3 Lever, 1 Workable.
+- **~5,500 openings scanned per run, ~98 matched**, 100 seconds, 97/97 endpoints OK.
+- **144 tests.** `uv run pytest tests/ -q`.
+- Sends at **18:15 Israel time**, every day.
+- Recipients: Shani and Dan (the `RECIPIENT` secret takes a comma-separated list).
 
-- ✅ Code written, tested, pushed to GitHub. Repo is currently **public** (flip to private
-  when done — nothing secret is in it).
-- ✅ GitHub Actions workflow installed (`.github/workflows/daily.yml`).
-- ⚠️ **Email sending NOT yet working.** The workflow runs but fails at Gmail login with
-  `SMTPAuthenticationError (535)`. **Root cause: the `GMAIL_APP_PASSWORD` secret was
-  entered WITH spaces.** Gmail needs the 16 characters with NO spaces.
-- ℹ️ Ledger was reset locally to send a full first digest for testing, but that reset was
-  **not pushed** (needs a token — see below). The repo still has the seeded ledger.
+## How it works
 
-## TO FINISH — remaining steps
-
-### 1. Fix the email (the one real blocker)
-In the GitHub repo → **Settings → Secrets and variables → Actions**:
-- `GMAIL_USER` = `shani.jobscanner@gmail.com`
-- `GMAIL_APP_PASSWORD` = the 16-char Gmail app password **with spaces removed**
-  (e.g. `abcd efgh ijkl mnop` → `abcdefghijklmnop`).
-  Generate/refresh at https://myaccount.google.com/apppasswords (signed in as
-  shani.jobscanner). Requires 2-Step Verification ON (already done).
-- `RECIPIENT` = `shani.shahar1997@gmail.com` (or set to shani.jobscanner@gmail.com first
-  to test to yourself, then switch).
-
-### 2. Allow the daily ledger commit
-Settings → **Actions → General → Workflow permissions → "Read and write permissions"** → Save.
-(Without this, the daily commit of `seen.sqlite` fails.)
-
-### 3. Test
-Actions tab → **Daily job scan → Run workflow**. With the ledger seeded it will email
-"No new jobs today" (correct — proves delivery works). To test a REAL digest, run
-`python -m scanner.run --seed` locally is the opposite; instead delete `seen.sqlite`,
-commit, push, then run — it will email the full current list once.
-
-### 4. Go live
-Once the test email arrives, it's autonomous — runs 21:30 IST daily. Flip repo to
-**private** if desired.
-
-## Handover to a new Claude / new machine
-
-Nothing is hidden on the old machine. To continue elsewhere:
-
-```bash
-git clone https://github.com/danszwec/job-scanner.git
-cd job-scanner
-uv sync                              # rebuild the venv from uv.lock
-uv run python -m scanner.run --dry-run   # test locally (no email)
+```
+companies.yaml → fetch every ATS → filter → dedup against seen.sqlite → email → commit ledger
 ```
 
-- **Secrets are NOT in git** (correct). They live only in GitHub repo secrets. The new
-  person just needs the 3 secret values (Gmail user / app password / recipient).
-- **The ledger (`seen.sqlite`, `jobs.csv`) IS in git** — that's the dedup memory; keep it.
-- To push changes later: any GitHub account with write access to the repo, or a
-  fine-grained PAT with **Contents: Read/write** (+ **Workflows: Read/write** if editing
-  `.github/workflows/`).
-- To grow the company list: edit `companies.yaml` (format documented in README), or ask
-  Claude to "add more companies" — it runs a discovery pass.
+The runner is wiped after each run, so the workflow **commits `seen.sqlite` and `jobs.csv`
+back to the repo** — that commit is the memory. Look for `chore: daily scan ledger <date>`
+from `job-scanner-bot`.
 
-## TODO — email template & CTR (not done yet)
+**Dedup** is by `job_uid` (`{provider}:{board_id}`), the primary key of the `jobs` table.
+`emailed` is 0 until a send succeeds, then 1. A job already in the table is never a
+candidate again. `mark_emailed` runs *only* on a successful send, so a failed send leaves
+the rows at 0 and the next run retries them rather than dropping them.
 
-The current email (`scanner/email_digest.py` → `render_html`) is functional but plain:
-company headers + text links. Needs a real design pass:
+**The filter** matches roles, not keywords. A title needs a DOMAIN word (product, project,
+operations, brand, marketing, creative…) next to a HEAD noun (manager, coordinator,
+designer, specialist…), in either order. `engineer`, `developer`, `architect` and
+`scientist` are deliberately *not* head nouns, which is what keeps technical titles out
+without a blocklist. "Engineering Manager" has a head but no domain and drops; "Software
+Project Manager" has both and stays. Plus a seniority exclude, an Israel-location rule and
+a 45-day freshness cap. See `scanner/filters.py`.
 
-- **Colors / branded template.** Pick a theme (options discussed: warm coral/peach,
-  professional blue/teal, modern purple/violet) and build a proper HTML email — header
-  bar with accent color + title, each company as a card, each job as a row with a
-  location pill.
-- **CTR (click optimization).** Replace bare text links with a clear tappable
-  **"View job →" button** per job (bigger tap target → more clicks). Note: real click
-  *tracking/measurement* would need a server or an email service (Resend/SendGrid) — we
-  deliberately skipped that. "CTR" here means designing for clicks, not measuring them.
-  If measurement is wanted later, that's a separate infra decision.
-- **Language / direction.** Decide English (LTR) vs Hebrew (RTL) vs a Hebrew-greeting /
-  English-labels hybrid — the recipient is Israeli, so RTL Hebrew may feel more natural.
-  Job titles stay as posted (mixed HE/EN).
+The KEEP / DROP lists in `tests/test_filters.py` are the profile spec. **Change those
+first** when the target changes.
 
-All of this is isolated to `render_html` in `scanner/email_digest.py` — no other file
-changes needed.
+## Secrets
 
-## Known follow-ups / nice-to-haves
+Settings → Secrets and variables → Actions:
 
-- `git pull` before running locally so the ledger stays current.
-- Node.js-20 deprecation warning in Actions is harmless (actions still run on Node 24).
-- One-off transient network errors on a single company just skip that company for the
-  day; the run continues (by design).
-- To reach 100+ companies, add more ATS providers (e.g. Rippling) or more Comeet
-  companies (each needs its uid + token scraped from the public page).
+| secret | value |
+|---|---|
+| `GMAIL_USER` | `shani.jobscanner@gmail.com` |
+| `GMAIL_APP_PASSWORD` | 16-char Gmail app password, **no spaces** |
+| `RECIPIENT` | one or more addresses, comma-separated |
 
-## The manual first list
+Settings → Actions → General → Workflow permissions must be **Read and write**, or the
+ledger commit fails.
 
-`jobs_for_shani.csv` (in the repo root) — 113 matched jobs from the first scan, ready to
-open in Excel and send to Shani manually while the email pipeline is being finished.
+The app password needs 2-Step Verification on the sending account. That was the original
+blocker: the account existed but had no 2FA, so no app password could exist, and every run
+failed at login.
+
+## Running it
+
+```bash
+uv sync
+uv run pytest tests/ -q
+uv run python -m scanner.run --dry-run   # prints the digest; never touches the ledger
+uv run python -m scanner.run --seed      # marks everything live as sent, no email
+uv run python -m scanner.run             # real run (needs the Gmail env vars)
+```
+
+`--dry-run` and `--seed` are also available as checkboxes on **Actions → Daily job scan →
+Run workflow**, so neither needs a local checkout.
+
+## Things that will confuse you later
+
+- **Two cron entries, on purpose.** GitHub cron is UTC with no DST awareness, so no single
+  entry holds a fixed local time. Both 15:15 and 16:15 UTC fire daily and the "Right hour?"
+  step drops whichever is not 18:xx in Israel. A skipped run reports success and does
+  nothing — a skip is not a failure.
+- **Gmail clips bodies over ~102 KB.** The digest cards the first 50 roles and lists the
+  rest compactly, which keeps any digest under ~97 KB. A normal night is 6 KB.
+- **No apostrophes in the font stacks** in `email_digest.py`. Style attributes are
+  single-quoted, so a quoted font name closes the attribute early and silently drops every
+  declaration after it. `font-family` is written last in every style for the same reason,
+  and the tests fail if that ordering breaks.
+- **Workday needs the location facet, not `searchText`.** `searchText` is free text over
+  the whole posting: it found none of Salesforce's Israeli roles and matched Illinois on
+  PayPal. Also, Workday reports `total` on the first page only — trusting it on later pages
+  capped every tenant at 40 postings.
+- **Comeet tokens are per-company** and scraped from the public careers page. They are in
+  `companies.yaml`. Not secret (they come off public pages) but they do rotate.
+
+## Known gaps
+
+- **Duplicate postings.** Dedup keys on the provider's board id, so a role deleted and
+  re-posted gets a new id and is sent twice. No occurrences observed, but it is real. A
+  secondary `(company, title, location)` key would close it.
+- **`posted_at` is not stored.** A job recorded but never emailed stays a candidate
+  forever and could be sent after going stale. Needs a column and a migration.
+- **No alarm on silent zeros.** OpenWeb's board returns 0 and PayPal's Workday has no
+  Israeli roles; both count as "ok". A company could die unnoticed. Wants a warning after
+  N consecutive empty days.
+- **The repo is public** and this file names the sending and receiving addresses.
+- Workday's "Posted 30+ Days Ago" is treated as stale and dropped, which is stricter than
+  the 45-day rule. Workday gives no real dates, so there is no better signal.
+
+## Growing the company list
+
+Edit `companies.yaml`; the header documents the fields per provider. Verify any new entry
+against live job data before trusting it — slug guessing produced eight convincing false
+positives during the last pass (`greenhouse/fox` is a veterinary clinic, `ashby/tailor` is
+a Japanese firm, `lever/bloom` is a Canadian retailer).
+
+**Do not re-run the discovery sweep on Shani's remaining companies expecting a better
+answer.** Three passes were done — static HTML, slug guessing, then a headless browser
+capturing every request. The reasons the rest are unreachable are written at the bottom of
+`companies.yaml`. In short: most proxy their ATS server-side so the credentials never reach
+the client, and the creative studios and retail brands have no machine-readable board at
+all. Adding those means a per-company HTML scraper that breaks whenever they restyle.
