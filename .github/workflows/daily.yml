@@ -2,8 +2,12 @@ name: Daily job scan
 
 on:
   schedule:
-    # 18:30 UTC ≈ 21:30 Israel time in summer (UTC+3); ~20:30 in winter (UTC+2).
-    - cron: "30 18 * * *"
+    # Target: 18:15 Israel time, all year. GitHub cron is UTC only and has no notion of
+    # daylight saving, so one entry cannot hold a fixed local time — Israel is UTC+3 in
+    # summer and UTC+2 in winter. Both entries fire every day and the "Right hour?" step
+    # below drops whichever one is not 18:xx locally, so exactly one run happens.
+    - cron: "15 15 * * *" # 18:15 Israel in summer (IDT, UTC+3)
+    - cron: "15 16 * * *" # 18:15 Israel in winter (IST, UTC+2)
   workflow_dispatch:
     inputs:
       dry_run:
@@ -28,22 +32,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Two crons cover both Israeli offsets; only one of them is 18:xx locally today.
+      # Manual runs always proceed.
+      - name: Right hour?
+        id: gate
+        run: |
+          hour=$(TZ=Asia/Jerusalem date +%H)
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$hour" = "18" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Israel local time is $(TZ=Asia/Jerusalem date '+%H:%M %Z') — proceeding."
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Israel local hour is ${hour}, not 18. The other cron covers today."
+          fi
+
       - name: Checkout (carries yesterday's ledger)
+        if: steps.gate.outputs.run == 'true'
         uses: actions/checkout@v5
 
       - name: Install uv
+        if: steps.gate.outputs.run == 'true'
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Sync dependencies
+        if: steps.gate.outputs.run == 'true'
         run: uv sync --frozen
 
       - name: Tests
+        if: steps.gate.outputs.run == 'true'
         run: uv run pytest tests/ -q
 
       - name: Run daily scan
         id: scan
+        if: steps.gate.outputs.run == 'true'
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
@@ -60,7 +83,7 @@ jobs:
       # always(): a failed send must not cost us the scan results. Before this, every
       # email failure also discarded that day's ledger and run-health row.
       - name: Commit updated ledger
-        if: always() && inputs.dry_run != true
+        if: always() && steps.gate.outputs.run == 'true' && inputs.dry_run != true
         run: |
           # Stage only what exists. jobs.csv is not tracked and is written late in the
           # run, so an early failure leaves it absent — and `git add` on a missing path

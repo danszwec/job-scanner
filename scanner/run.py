@@ -17,6 +17,7 @@ import argparse
 import datetime
 import os
 import sys
+import zoneinfo
 
 import yaml
 
@@ -27,14 +28,13 @@ COMPANIES_PATH = os.path.join(REPO_ROOT, "companies.yaml")
 DB_PATH = os.path.join(REPO_ROOT, "seen.sqlite")
 CSV_PATH = os.path.join(REPO_ROOT, "jobs.csv")
 
-# Israel is UTC+2 (winter) / UTC+3 (summer). GitHub runners are UTC. We approximate IST
-# as UTC+3 for the human-facing date label; being an hour off in winter is harmless.
-IST_OFFSET = datetime.timedelta(hours=3)
+# Runners are UTC. Use the real zone rather than a fixed offset, so the date label is
+# right on both sides of the daylight-saving switch.
+ISRAEL = zoneinfo.ZoneInfo("Asia/Jerusalem")
 
 
 def israel_today():
-    now_ist = datetime.datetime.now(datetime.UTC) + IST_OFFSET
-    return now_ist.date().isoformat()
+    return datetime.datetime.now(ISRAEL).date().isoformat()
 
 
 def write_step_summary(stats, send_error):
