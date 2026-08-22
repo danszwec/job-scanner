@@ -4,7 +4,9 @@
 # Fields by source:
 #   greenhouse:      name, slug
 #   lever:           name, slug
-#   comeet:          name, uid, token
+#   ashby:           name, slug
+#   workable:        name, slug
+#   comeet:          name, uid, token       (token is scraped from the careers page)
 #   smartrecruiters: name, slug            (slug often ends in a digit, e.g. "Wix2")
 #   workday:         name, tenant, site, wd_host
 # Optional: is_israeli (default true) — controls the "include if location ambiguous" rule.
@@ -154,3 +156,35 @@
 - {name: Travelier, source: comeet, uid: '64.006', token: '46615FE15FED321A6446601A64D322796', is_israeli: true}
 - {name: UVeye, source: comeet, uid: '92.00F', token: '29FA7C17971797FBA179753E53E0A7C', is_israeli: true}
 - {name: eToro, source: comeet, uid: '41.009', token: '14952452466D3DB7B61495240B91', is_israeli: true}
+
+# --- headless-browser sweep of the remaining 73 (2026-08-22) -------------------------
+# Static HTML found 9 of 97 and slug guessing another 15, so the rest were swept with a
+# real browser, capturing the API calls each careers page makes. Yield was low: most of
+# these companies proxy their ATS server-side, so the credentials never reach the client.
+# See the note at the end of this file for what is and is not reachable.
+- {name: Playtika, source: greenhouse, slug: playtikaltd, is_israeli: true}
+- {name: Candivore, source: comeet, uid: '48.00F', token: '84F31DA31DA109E084F4AC74278298B298B', is_israeli: true}
+- {name: Humanz, source: workable, slug: humanz, is_israeli: false}
+# Dynamic Yield is part of Mastercard, so its roles sit in Mastercard's Workday tenant.
+- {name: Mastercard, source: workday, tenant: mastercard, site: CorporateCareers, wd_host: wd1, is_israeli: false}
+
+# --- Not reachable, and why (checked 2026-08-22) --------------------------------------
+# Of Shani's 113 companies, 44 are tracked above. The remaining 69 were swept with a
+# headless browser that captured every request each careers page makes. They fall into
+# four groups, and only the last is worth revisiting:
+#
+# 1. ATS proxied server-side. Guesty, Atera, Buildots, Papaya Global and Sett all use
+#    Comeet, but fetch it from their own backend, so the uid and token never reach the
+#    browser and cannot be captured. Verified: Comeet's API rejects a request with no
+#    token ("Token is missing"). Nothing to find client-side.
+# 2. Job board moved. Outbrain now hires through teads.com, Elementor through
+#    elementor.careers. Both are JS-rendered with no ATS call on the landing page.
+# 3. No machine-readable board at all. The creative studios and retail brands
+#    (Hello Design, Bloom, Firma, NOISE, Castro, TERMINAL X, Fox, Golf, Urbanica,
+#    Story, Tollman's, Museum of Illusions and ~20 more) list roles in page copy or a
+#    contact form. No scanner can watch these.
+# 4. Unsupported provider: Nexar uses Teamtailor, which has no public board API.
+#
+# To add one of these you would have to scrape that company's own careers HTML, which is
+# a per-company parser that breaks whenever they restyle the page. Not worth it for a
+# digest that averages three roles a night.

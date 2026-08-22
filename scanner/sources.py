@@ -322,6 +322,44 @@ def fetch_ashby(company):
     return jobs
 
 
+def fetch_workable(company):
+    """company: {name, slug}. GET the public widget API.
+
+    The widget endpoint is the only Workable board API that needs no key. It returns
+    `locations[].countryCode`, which gives clean Israel filtering.
+    """
+    slug = company["slug"]
+    url = f"https://apply.workable.com/api/v1/widget/accounts/{slug}?details=true"
+    r = requests.get(url, headers=UA, timeout=TIMEOUT)
+    r.raise_for_status()
+    jobs = []
+    for j in r.json().get("jobs", []):
+        locations = j.get("locations") or []
+        first = locations[0] if locations else {}
+        country = first.get("countryCode") or j.get("country")
+        city = j.get("city") or first.get("city") or ""
+        loc_text = ", ".join(p for p in (city, j.get("country")) if p)
+        jobs.append(
+            {
+                "job_uid": _uid(
+                    "workable",
+                    j.get("shortcode"),
+                    company["name"],
+                    j.get("title"),
+                    loc_text,
+                ),
+                "title": j.get("title", ""),
+                "company": company["name"],
+                "location": loc_text,
+                "country": country,
+                "url": j.get("url") or j.get("shortlink", ""),
+                "posted_at": j.get("published_on") or j.get("created_at"),
+                "source": "workable",
+            }
+        )
+    return jobs
+
+
 FETCHERS = {
     "greenhouse": fetch_greenhouse,
     "lever": fetch_lever,
@@ -329,6 +367,7 @@ FETCHERS = {
     "smartrecruiters": fetch_smartrecruiters,
     "workday": fetch_workday,
     "ashby": fetch_ashby,
+    "workable": fetch_workable,
 }
 
 

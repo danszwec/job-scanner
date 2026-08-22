@@ -121,3 +121,61 @@ def test_unknown_source_is_reported_not_raised():
     jobs, err = sources.fetch_company({"name": "X", "source": "nosuchats"})
     assert jobs == []
     assert "unknown source" in err
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return self._payload
+
+
+WORKABLE_PAYLOAD = {
+    "name": "Humanz",
+    "jobs": [
+        {
+            "title": "Customer Success Manager",
+            "shortcode": "ABC123",
+            "url": "https://apply.workable.com/j/ABC123",
+            "published_on": "2026-08-10",
+            "country": "Israel",
+            "city": "Ramat Gan",
+            "locations": [
+                {"country": "Israel", "countryCode": "IL", "city": "Ramat Gan"}
+            ],
+        },
+        {
+            "title": "Account Director",
+            "shortcode": "XYZ789",
+            "url": "https://apply.workable.com/j/XYZ789",
+            "published_on": "2026-04-13",
+            "country": "South Africa",
+            "city": "Sandton",
+            "locations": [{"country": "South Africa", "countryCode": "ZA"}],
+        },
+    ],
+}
+
+
+def test_workable_maps_country_code_for_israel_filtering(monkeypatch):
+    monkeypatch.setattr(
+        sources.requests, "get", lambda *a, **k: _FakeResponse(WORKABLE_PAYLOAD)
+    )
+    jobs = sources.fetch_workable({"name": "Humanz", "slug": "humanz"})
+    assert [j["country"] for j in jobs] == ["IL", "ZA"]
+    assert jobs[0]["job_uid"] == "workable:ABC123"
+    assert jobs[0]["location"] == "Ramat Gan, Israel"
+    assert jobs[0]["posted_at"] == "2026-08-10"
+    assert jobs[0]["source"] == "workable"
+
+
+def test_workable_survives_a_job_with_no_locations(monkeypatch):
+    payload = {"jobs": [{"title": "Remote Role", "shortcode": "Q1", "url": "u"}]}
+    monkeypatch.setattr(sources.requests, "get", lambda *a, **k: _FakeResponse(payload))
+    jobs = sources.fetch_workable({"name": "X", "slug": "x"})
+    assert jobs[0]["country"] is None
+    assert jobs[0]["location"] == ""
