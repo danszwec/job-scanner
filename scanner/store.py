@@ -44,7 +44,7 @@ def connect(db_path):
 def filter_new(conn, jobs):
     """Return the subset of `jobs` whose job_uid is not already in the db.
 
-    Also bumps last_seen for jobs we've seen before (staleness tracking).
+    Pure read; last_seen is bumped separately by touch_last_seen.
     """
     new = []
     seen_uids = {r["job_uid"] for r in conn.execute("SELECT job_uid FROM jobs")}
@@ -53,6 +53,17 @@ def filter_new(conn, jobs):
             continue
         new.append(job)
     return new
+
+
+def preview_new(conn, jobs):
+    """Read-only: what a real run would email right now, without writing anything.
+
+    That is the jobs we have never recorded, plus rows already recorded but not yet
+    emailed (a previous send that failed).
+    """
+    recorded = {r["job_uid"] for r in conn.execute("SELECT job_uid FROM jobs")}
+    fresh = [j for j in jobs if j["job_uid"] not in recorded]
+    return unemailed(conn) + fresh
 
 
 def record_new(conn, jobs, today):

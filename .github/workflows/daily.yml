@@ -4,7 +4,16 @@ on:
   schedule:
     # 18:30 UTC ≈ 21:30 Israel time in summer (UTC+3); ~20:30 in winter (UTC+2).
     - cron: "30 18 * * *"
-  workflow_dispatch: {}   # allow manual runs from the Actions tab
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Scan and print the digest without sending or writing the ledger"
+        type: boolean
+        default: false
+      seed:
+        description: "Record everything currently live as already sent (run once, before go-live)"
+        type: boolean
+        default: false
 
 # Needs write access to commit the updated ledger (seen.sqlite + jobs.csv) back.
 permissions:
@@ -17,31 +26,63 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout (carries yesterday's ledger)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync
+        run: uv sync --frozen
 
-      - name: Run daily scan + send email
+      - name: Tests
+        run: uv run pytest tests/ -q
+
+      - name: Run daily scan
+        id: scan
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           RECIPIENT: ${{ secrets.RECIPIENT }}
-        run: uv run python -m scanner.run
-
-      - name: Commit updated ledger
         run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            uv run python -m scanner.run --dry-run
+          elif [ "${{ inputs.seed }}" = "true" ]; then
+            uv run python -m scanner.run --seed
+          else
+            uv run python -m scanner.run
+          fi
+
+      # always(): a failed send must not cost us the scan results. Before this, every
+      # email failure also discarded that day's ledger and run-health row.
+      - name: Commit updated ledger
+        if: always() && inputs.dry_run != true
+        run: |
+          if [ ! -f seen.sqlite ] && [ ! -f jobs.csv ]; then
+            echo "Nothing to commit — the scan did not get far enough."
+            exit 0
+          fi
           git config user.name  "job-scanner-bot"
           git config user.email "job-scanner-bot@users.noreply.github.com"
           git add seen.sqlite jobs.csv
           if git diff --cached --quiet; then
             echo "No ledger changes to commit."
-          else
-            git commit -m "chore: daily scan ledger $(date -u +%Y-%m-%d)"
-            git push
+            exit 0
           fi
+          git commit -m "chore: daily scan ledger $(date -u +%Y-%m-%d)"
+          # Another run (or a push of your own) may have landed since checkout.
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "Ledger pushed on attempt ${attempt}."
+              exit 0
+            fi
+            echo "Push failed on attempt ${attempt}; retrying."
+            sleep 5
+          done
+          echo "::error::Could not push the ledger after 3 attempts."
+          exit 1
