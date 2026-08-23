@@ -150,3 +150,67 @@ def test_recipient_secret_can_hold_several_addresses(raw, expected):
     """sendmail needs a real list; the raw comma-joined string would be treated as one
     malformed address and rejected."""
     assert email_digest.parse_recipients(raw) == expected
+
+
+# A real Gmail rejection, trimmed. This is the shape find_bounce has to read.
+BOUNCE_REPORT = b"""From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>
+Subject: Delivery Status Notification (Failure)
+Content-Type: multipart/report; report-type=delivery-status; boundary="b1"
+
+--b1
+Content-Type: text/plain; charset=UTF-8
+
+Your message to shanishahar1997@gmail.com has been blocked.
+
+--b1
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; googlemail.com
+Final-Recipient: rfc822; shanishahar1997@gmail.com
+Action: failed
+Status: 5.0.0
+Diagnostic-Code: smtp; Message rejected. For more information, go to https://support.google.com/mail/answer/69585
+
+--b1
+Content-Type: message/rfc822
+
+Message-ID: <abc123@gmail.com>
+Subject: For the most beautiful girl - 49 new roles
+
+body
+--b1--
+"""
+
+
+def test_bounce_reason_extracts_recipient_and_diagnostic():
+    reason = email_digest._bounce_reason(BOUNCE_REPORT)
+    assert "shanishahar1997@gmail.com" in reason
+    assert "Message rejected" in reason
+
+
+def test_bounce_reason_survives_a_report_with_no_delivery_status():
+    reason = email_digest._bounce_reason(b"Subject: nope\n\nplain text only\n")
+    assert "recipient unknown" in reason
+    assert "no reason given" in reason
+
+
+def test_find_bounce_is_a_noop_without_credentials(monkeypatch):
+    """It must never fail the scan just because the mailbox cannot be read."""
+    monkeypatch.delenv("GMAIL_USER", raising=False)
+    monkeypatch.delenv("GMAIL_APP_PASSWORD", raising=False)
+    assert email_digest.find_bounce("<x@y>") is None
+
+
+def test_find_bounce_returns_none_when_imap_breaks(monkeypatch):
+    monkeypatch.setenv("GMAIL_USER", "a@gmail.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "pw")
+
+    def boom(*a, **k):
+        raise OSError("imap down")
+
+    monkeypatch.setattr(email_digest.imaplib, "IMAP4_SSL", boom)
+    assert email_digest.find_bounce("<x@y>", wait_seconds=0) is None
+
+
+def test_find_bounce_needs_a_message_id():
+    assert email_digest.find_bounce(None) is None

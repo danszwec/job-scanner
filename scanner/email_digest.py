@@ -12,18 +12,29 @@ do not load), and each gradient sits on a `bgcolor` so clients that ignore
 postings render correctly inside the left-to-right layout.
 """
 
+import email
+import imaplib
 import os
 import re
 import smtplib
+import time
 from collections import defaultdict
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formataddr
+from email.utils import formataddr, make_msgid
 from html import escape
 
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
+IMAP_HOST = "imap.gmail.com"
+
+# SMTP accepting a message only means Gmail queued it. A policy rejection arrives seconds
+# later as a bounce in the sender's own mailbox. Nothing read that mailbox, so a blocked
+# digest looked exactly like a delivered one — four were lost that way before anyone
+# noticed. After sending we wait this long for a bounce naming our message.
+BOUNCE_WAIT_SECONDS = 45
+BOUNCE_POLL_SECONDS = 5
 
 # Gmail clips any message body over roughly 102 KB. Full cards cost ~1.1 KB each and
 # compact rows ~0.23 KB, so we card the first MAX_CARDS, list the next MAX_LISTED, and
@@ -296,6 +307,9 @@ def send_email(html_body, subject, *, text_body=None, dry_run=False):
     # A display name, so the inbox shows "Job Scanner" and not the raw gmail address.
     msg["From"] = formataddr((FROM_NAME, sender), charset="utf-8")
     msg["To"] = ", ".join(recipients)
+    # Our own Message-ID, so a later bounce can be tied back to this exact send.
+    message_id = make_msgid(domain=sender.split("@")[-1])
+    msg["Message-ID"] = message_id
     # Order matters: clients show the LAST part they can render.
     msg.attach(
         MIMEText(
@@ -309,6 +323,60 @@ def send_email(html_body, subject, *, text_body=None, dry_run=False):
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
         server.login(sender, password)
         server.sendmail(sender, recipients, msg.as_string())
+    return message_id
+
+
+def find_bounce(message_id, *, wait_seconds=BOUNCE_WAIT_SECONDS):
+    """Watch the sending mailbox for a rejection of the message we just sent.
+
+    Returns a reason string, or None if nothing bounced within wait_seconds.
+
+    Best effort by design: any IMAP problem returns None rather than failing the run. A
+    missed bounce is a worse outcome than a noisy one, but breaking the whole scan because
+    IMAP is unavailable would be worse still.
+    """
+    sender = os.environ.get("GMAIL_USER")
+    password = os.environ.get("GMAIL_APP_PASSWORD")
+    if not (sender and password and message_id):
+        return None
+
+    needle = message_id.encode()
+    deadline = time.monotonic() + wait_seconds
+    while True:
+        try:
+            with imaplib.IMAP4_SSL(IMAP_HOST) as mail:
+                mail.login(sender, password)
+                mail.select("INBOX", readonly=True)
+                # Gmail sends these from mailer-daemon@googlemail.com.
+                _, data = mail.search(None, "FROM", "mailer-daemon")
+                for msg_id in reversed(data[0].split()):
+                    _, payload = mail.fetch(msg_id, "(RFC822)")
+                    raw = payload[0][1]
+                    if not isinstance(raw, bytes) or needle not in raw:
+                        continue
+                    return _bounce_reason(raw)
+        except Exception:  # noqa: BLE001 - never fail the scan over a mailbox check
+            return None
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(BOUNCE_POLL_SECONDS)
+
+
+def _bounce_reason(raw):
+    """Pull the recipient and the SMTP diagnostic out of a delivery-status report."""
+    report = email.message_from_bytes(raw)
+    recipient = diagnostic = ""
+    for part in report.walk():
+        if part.get_content_type() != "message/delivery-status":
+            continue
+        text = str(part)
+        found = re.search(r"Final-Recipient:.*?;\s*(\S+)", text)
+        if found:
+            recipient = found.group(1)
+        found = re.search(r"Diagnostic-Code:\s*(.+)", text)
+        if found:
+            diagnostic = found.group(1).strip()
+    return f"{recipient or 'recipient unknown'}: {diagnostic or 'rejected, no reason given'}"
 
 
 def render_text(jobs, date_str):

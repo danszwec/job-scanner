@@ -136,13 +136,23 @@ def main(dry_run=False, seed=False):
     to_email = store.unemailed(conn)
     send_error = None
     try:
-        email_digest.send_email(
+        message_id = email_digest.send_email(
             email_digest.render_html(to_email, today),
             email_digest.subject_for(to_email, today),
             text_body=email_digest.render_text(to_email, today),
         )
     except Exception as exc:  # noqa: BLE001 - any send failure must still persist below
         send_error = f"{type(exc).__name__}: {exc}"
+        message_id = None
+
+    # SMTP accepting the message only means Gmail queued it. Google can still reject it on
+    # policy grounds seconds later, and that bounce lands in the sender's own mailbox — so
+    # without this check a blocked digest is indistinguishable from a delivered one, and
+    # the jobs get marked sent anyway. Four digests were lost that way before we noticed.
+    if send_error is None and to_email:
+        bounce = email_digest.find_bounce(message_id)
+        if bounce:
+            send_error = f"rejected after queueing: {bounce}"
 
     # Only mark them sent if they actually went out; otherwise tomorrow retries.
     if send_error is None:
