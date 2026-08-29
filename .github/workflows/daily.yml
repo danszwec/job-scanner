@@ -2,12 +2,19 @@ name: Daily job scan
 
 on:
   schedule:
-    # Target: 18:15 Israel time, all year. GitHub cron is UTC only and has no notion of
-    # daylight saving, so one entry cannot hold a fixed local time — Israel is UTC+3 in
-    # summer and UTC+2 in winter. Both entries fire every day and the "Right hour?" step
-    # below drops whichever one is not 18:xx locally, so exactly one run happens.
+    # Aim for the evening in Israel, but do NOT depend on landing on a given hour.
+    # GitHub runs scheduled workflows on a best-effort queue: these drifted from 15 to 56
+    # minutes late, then past the hour, and eventually fired 9 hours late. An earlier
+    # version of this workflow gated on "is it 18:xx in Israel?" and consequently skipped
+    # five days in a row while every run still reported success.
+    #
+    # The gate below is now "has today's digest already gone out?", so whichever of these
+    # fires first on a given Israeli day does the work and the rest stand down. More
+    # entries simply mean more chances to catch a day.
     - cron: "15 15 * * *" # 18:15 Israel in summer (IDT, UTC+3)
     - cron: "15 16 * * *" # 18:15 Israel in winter (IST, UTC+2)
+    - cron: "15 19 * * *" # safety net if both of the above are delayed
+    - cron: "15 22 * * *" # last chance before the Israeli day ends
   workflow_dispatch:
     inputs:
       dry_run:
@@ -32,23 +39,42 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Two crons cover both Israeli offsets; only one of them is 18:xx locally today.
-      # Manual runs always proceed.
-      - name: Right hour?
+      # Checkout first: the gate reads the ledger to decide whether today is already done.
+      - name: Checkout (carries yesterday's ledger)
+        uses: actions/checkout@v5
+
+      # Gate on work done, not on the clock. The previous version required the Israel hour
+      # to be exactly 18, which silently skipped five consecutive days once GitHub's
+      # scheduler started running these hours late. Asking "is there already a clean run
+      # for today's Israeli date?" is immune to that: a late run still delivers, and a
+      # second cron on the same day stands down.
+      #
+      # A run that failed to send does NOT count, so a later cron retries it the same day.
+      - name: Already sent today?
         id: gate
         run: |
-          hour=$(TZ=Asia/Jerusalem date +%H)
-          if [ "${{ github.event_name }}" != "schedule" ] || [ "$hour" = "18" ]; then
+          today=$(TZ=Asia/Jerusalem date +%F)
+          done_today=$(python3 - "$today" <<'PY'
+          import sqlite3, sys
+          try:
+              conn = sqlite3.connect("seen.sqlite")
+              (n,) = conn.execute(
+                  "SELECT COUNT(*) FROM runs WHERE run_date = ? "
+                  "AND (failures IS NULL OR failures = '')",
+                  (sys.argv[1],),
+              ).fetchone()
+          except Exception:
+              n = 0          # no ledger yet, or an older schema: just run.
+          print(n)
+          PY
+          )
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$done_today" -eq 0 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Israel local time is $(TZ=Asia/Jerusalem date '+%H:%M %Z') — proceeding."
+            echo "No clean run recorded for ${today} (Israel) — proceeding."
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "Israel local hour is ${hour}, not 18. The other cron covers today."
+            echo "${today} (Israel) already has a clean run. Standing down."
           fi
-
-      - name: Checkout (carries yesterday's ledger)
-        if: steps.gate.outputs.run == 'true'
-        uses: actions/checkout@v5
 
       - name: Install uv
         if: steps.gate.outputs.run == 'true'
