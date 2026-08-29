@@ -50,9 +50,11 @@ DOMAINS_EN = [
     "production",
     r"partner(ship)?s?",
     "business development",
-    "account",
-    "customer success",
-    "customer experience",
+    # Deliberately absent: "account", "customer success", "customer experience". Account
+    # management and CS are a different job family from product/project/ops/creative, and
+    # they were the largest remaining source of off-profile matches. Without these domain
+    # words, "Account Manager" and "Customer Success Manager" have a head noun but no
+    # domain, so they fail on structure like every other unwanted title.
     "growth",
     # Only the marketing sense of "acquisition" — bare "acquisition" pulled in every
     # "Talent Acquisition" recruiting role.

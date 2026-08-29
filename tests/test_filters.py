@@ -111,6 +111,20 @@ DROP_ADJACENT_FAMILIES = [
     "Account Executive- Defense Sector",
     "Enterprise Account Executive (TLV)",
     "Client Enablement Associate",
+    # Account management and customer success: a different job family, excluded on
+    # 2026-08-29 once they turned out to be the biggest remaining source of noise.
+    "Account Manager",
+    "Major Account Manager",
+    "SMB Account Manager",
+    "Technical Account Manager",
+    "Programatic account Manager- Maternity Leave Cover)",
+    "Advertiser Account Manager (Domestic Market)",
+    "Customer Success Manager",
+    "Enterprise Customer Success Manager",
+    "Technical Customer Success Manager, Endpoint Security",
+    "Junior Client Success Manager",
+    "Customer Experience Specialist",
+    "Customer Experience Associate",
 ]
 
 DROP_SENIORITY = [
